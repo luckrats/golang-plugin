@@ -1,16 +1,17 @@
 package org.jenkinsci.plugins.golang;
 
 import com.google.common.annotations.VisibleForTesting;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.model.DownloadService;
 import hudson.model.Node;
 import hudson.model.TaskListener;
-import hudson.remoting.Callable;
 import hudson.tools.DownloadFromUrlInstaller;
 import hudson.tools.ToolInstallation;
 import hudson.tools.ToolInstallerDescriptor;
 import hudson.util.VersionNumber;
+import jenkins.security.MasterToSlaveCallable;
 import net.sf.json.JSONObject;
 import org.kohsuke.stapler.DataBoundConstructor;
 
@@ -65,6 +66,7 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
         return expectedPath;
     }
 
+    @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
     private Installable getInstallable(Node node) throws IOException, InterruptedException {
         // Get the Go release that we want to install
         GolangRelease release = getConfiguredRelease();
@@ -104,7 +106,12 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
     }
 
     private GolangRelease getConfiguredRelease() {
-        for (GolangRelease r : ((DescriptorImpl) getDescriptor()).getInstallableReleases()) {
+        List<GolangRelease> releases = ((DescriptorImpl) getDescriptor()).getInstallableReleases();
+        if (releases == null) {
+            return null;
+        }
+
+        for (GolangRelease r : releases) {
             if (r.id.equals(id)) {
                 return r;
             }
@@ -119,6 +126,7 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
         }
 
         // Used by config.groovy to show a human-readable list of releases
+        @SuppressFBWarnings("NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
         public List<GolangRelease> getInstallableReleases()  {
             return GolangReleaseList.all().get(GolangReleaseList.class).toList();
         }
@@ -144,7 +152,12 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
             JSONObject root;
             try {
                 root = getData();
+                if (root == null) {
+                    // JSON file has not yet been downloaded by Jenkins
+                    return null;
+                }
             } catch (IOException e) {
+                // JSON parsing exception occurred
                 return null;
             }
 
@@ -168,6 +181,7 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
         public String osxversion;
         public String arch;
 
+        @SuppressFBWarnings("EQ_COMPARETO_USE_OBJECT_EQUALS")
         public int compareTo(GolangInstallable o) {
             // Sort by OS X version, descending
             if (osxversion != null && o.osxversion != null) {
@@ -210,11 +224,14 @@ public class GolangInstaller extends DownloadFromUrlInstaller {
         if (value.contains("86")) {
             return "386";
         }
+        if (value.contains("s390x")) {
+            return "s390x";
+        }
         throw new InstallationFailedException(Messages.UnsupportedCpuArch(arch));
     }
 
     /** Returns the values of the given Java system properties. */
-    private static class GetSystemProperties implements Callable<String[], InterruptedException> {
+    private static class GetSystemProperties extends MasterToSlaveCallable<String[], InterruptedException> {
         private static final long serialVersionUID = 1L;
 
         private final String[] properties;
